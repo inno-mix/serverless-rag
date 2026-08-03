@@ -7,6 +7,10 @@
 # Pushes to `main` run the same checks and then deploy via GitHub OIDC, so no
 # long-lived AWS access keys are stored in the repository.
 #
+# The deploy job is *skipped* until AWS_DEPLOY_ROLE_ARN is defined, so `main`
+# is green before any AWS setup exists. Define that variable (plus the account
+# setup below) and deploys begin on the next push — this file does not change.
+#
 # ---------------------------------------------------------------------------
 # Required GitHub repository configuration (Settings → Secrets and variables →
 # Actions → Variables). These are account/repo setup and are NOT created by
@@ -84,7 +88,13 @@ jobs:
   deploy:
     name: Deploy to AWS
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Skipped (not failed) until AWS_DEPLOY_ROLE_ARN is set, so `main` stays
+    # green before the deploy target exists. Setting the variable is the only
+    # step needed to switch deploys on — no change to this file.
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      vars.AWS_DEPLOY_ROLE_ARN != ''
     runs-on: ubuntu-latest
     permissions:
       id-token: write # required for GitHub OIDC
