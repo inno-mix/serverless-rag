@@ -1,0 +1,1 @@
+"""Query Lambda package."""

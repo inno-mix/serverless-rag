@@ -1,0 +1,38 @@
+[project]
+name = "serverless-rag"
+version = "0.1.0"
+description = "Serverless RAG Document Q&A on AWS (CDK v2, Python)"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["cdk.out", ".venv"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "ANN", # flake8-annotations — CLAUDE.md requires type hints on all signatures
+    "D",   # pydocstyle — Google-style docstrings on public shared functions
+]
+ignore = [
+    "D203", # incompatible with D211 (blank line before class docstring)
+    "D213", # incompatible with D212 (multi-line summary position)
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests do not need docstrings on every function.
+"tests/**" = ["D100", "D101", "D102", "D103", "D104", "ANN201", "ANN001"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit", "tests/infra"]
+pythonpath = ["."]
+addopts = "-ra"
