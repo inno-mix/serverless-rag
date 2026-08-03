@@ -23,8 +23,12 @@ FORBIDDEN_RESOURCE_TYPES = (
 
 
 def _synth() -> cx_api.CloudAssembly:
-    """Synthesize the real application using the committed cdk.json context."""
-    return build_app(CDK_CONTEXT).synth()
+    """Synthesize the real application using the committed cdk.json context.
+
+    Asset bundling is switched off so the suite never shells out to pip or
+    Docker; templates are identical either way.
+    """
+    return build_app(CDK_CONTEXT | {"aws:cdk:bundling-stacks": []}).synth()
 
 
 def test_cdk_json_declares_required_context():

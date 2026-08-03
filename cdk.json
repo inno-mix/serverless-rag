@@ -5,11 +5,16 @@
     "exclude": ["**/__pycache__/**", "cdk.out/**", ".venv/**", "tests/**"]
   },
   "context": {
+    "@aws-cdk/core:defaultCrossStackReferences": "strong",
+
     "region": "us-east-1",
 
     "_modelIdNote": "Verified 2026-08-04 against account 146259920030 via `aws bedrock list-foundation-models --region us-east-1 --by-provider anthropic` and `aws bedrock list-inference-profiles --region us-east-1`. In us-east-1 all current Claude models are reachable ONLY through an inference profile (us.anthropic.* / global.anthropic.*); a bare anthropic.claude-* id fails with 'on-demand throughput isn't supported'. Re-verify before changing (ADR-005).",
     "embeddingModelId": "amazon.titan-embed-text-v2:0",
     "generationModelId": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+
+    "chunkTargetTokens": 500,
+    "chunkOverlapTokens": 50,
 
     "minSimilarity": 0.35,
     "maxTokens": 1024,

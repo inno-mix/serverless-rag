@@ -110,6 +110,22 @@ Vector storage note: store as base64-packed `float32` bytes (`struct`/`numpy.tob
 
 - **Decision:** `cdk.json` context keys: `embeddingModelId`, `generationModelId`, `minSimilarity`, `maxTokens`. Lambdas read them from environment variables set by CDK.
 - **Rationale:** Bedrock model availability and naming change; swapping models must not require code edits. Verify current model IDs in the AWS Bedrock console/docs at build time.
+- **Amendment (Phase 1):** In `us-east-1`, current Claude models are **not** invocable by their bare `anthropic.*` id — only `anthropic.claude-3-haiku-20240307-v1:0` still supports bare on-demand invocation. Every current model must be addressed through a regional or global **inference profile** (`us.anthropic.*` / `global.anthropic.*`); a bare id fails at runtime with _"on-demand throughput isn't supported"_. `generationModelId` therefore carries the `us.` prefix. Verified against the account with `aws bedrock list-inference-profiles`.
+
+### ADR-006: EventBridge delivery for upload events instead of a direct S3 notification
+
+- **Status:** Accepted (Phase 1, T1.4)
+- **Context:** §1 describes `S3 ObjectCreated → Lambda (ingest)`. Implemented as a direct bucket notification, CDK places the notification resource in the **bucket's** stack (`StorageStack`), where it must reference the ingest function's ARN. `IngestStack` already references `StorageStack` for the table, bucket, and DLQ, so CloudFormation rejects the pair as a dependency cycle. This is inherent to the one-stack-per-concern split in §2, not an incidental wiring mistake.
+- **Decision:** Enable `EventBridgeEnabled` on the documents bucket and match uploads with an EventBridge rule that lives in `IngestStack` and targets the ingest function. The rule filters on `detail.object.key` with the `uploads/` prefix.
+- **Consequences:** References now point one way only (`IngestStack → StorageStack`), so the stacks stay split as §2 intends. The event payload changes shape: handlers read `detail.bucket.name` / `detail.object.key` rather than `Records[].s3`, and EventBridge delivers the key **un-encoded**, so no URL-decoding step is needed. EventBridge adds no idle cost. The EventBridge target deliberately carries **no** DLQ, since attaching one puts a queue policy referencing the rule ARN back into `StorageStack` and recreates the cycle; undelivered invocations are covered by the function's own dead-letter queue.
+- **Alternative rejected:** Collapsing storage and ingestion into one stack. That removes the cycle but discards the stack separation §2 specifies.
+
+### ADR-007: Lambda layer built without Docker
+
+- **Status:** Accepted (Phase 1, T1.4)
+- **Context:** §2 says shared code ships as a layer, but the layer also needs `numpy` (a binary wheel) and `pypdf`. CDK's normal answer is Docker bundling, which would make Docker a prerequisite for `cdk synth` — and therefore for the test suite and for the "clone and deploy" success metric in PRD §7.
+- **Decision:** Implement CDK's `ILocalBundling` escape hatch: build the layer with the local `pip`, requesting `--platform manylinux2014_x86_64 --only-binary=:all:` so Linux wheels are resolved even on an arm64 developer machine. CDK falls back to the Docker image automatically if the local build returns `False`.
+- **Consequences:** `cdk deploy` stays a single command with no Docker requirement. Tests set the `aws:cdk:bundling-stacks` context to `[]` so no suite ever shells out to pip. The layer asset hash covers both the shared sources and the pinned dependency specifiers, so bumping a pin invalidates the cached asset.
 
 ## 5. Prompt contract (query Lambda)
 
@@ -141,7 +157,8 @@ Context format sent to the model:
 
 - S3 buckets: block all public access; CloudFront OAC for the frontend bucket.
 - API: API key + usage plan (throttle 5 rps, burst 10) at MVP.
-- IAM: per-function roles; Bedrock `InvokeModel` scoped to the two configured model ARNs; DynamoDB scoped to the table + GSI.
+- IAM: per-function roles; DynamoDB scoped to the table + GSI.
+- Bedrock `InvokeModel` is scoped to the configured models, but that is **more than two ARNs** (amended in Phase 1). A regional inference profile is not itself the invocable resource: the caller needs the **inference-profile ARN plus the underlying foundation-model ARN in every region the profile can route to**. For `us.anthropic.claude-haiku-4-5-…` that is us-east-1, us-east-2, and us-west-2. Granting only the deployment region yields `AccessDeniedException` the first time Bedrock routes elsewhere. Still least privilege — no wildcard resources — just a wider ARN list than originally anticipated.
 - No secrets in code; nothing sensitive in the repo. `.env` files gitignored.
 
 ## 8. Observability

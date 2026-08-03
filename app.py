@@ -5,6 +5,7 @@ import os
 
 import aws_cdk as cdk
 
+from infra.ingest_stack import IngestStack
 from infra.storage_stack import StorageStack
 
 
@@ -33,6 +34,25 @@ def resolve_env(app: cdk.App) -> cdk.Environment:
     return cdk.Environment(account=os.environ.get("CDK_DEFAULT_ACCOUNT"), region=region)
 
 
+def _require_context(app: cdk.App, key: str) -> str:
+    """Read a required `cdk.json` context value.
+
+    Args:
+        app: The CDK application carrying the context.
+        key: The context key to read.
+
+    Returns:
+        The configured value as a string.
+
+    Raises:
+        ValueError: If the key is absent, which means `cdk.json` is incomplete.
+    """
+    value = app.node.try_get_context(key)
+    if value is None or value == "":
+        raise ValueError(f"Missing required context key {key!r} in cdk.json")
+    return str(value)
+
+
 def build_app(context: dict[str, object] | None = None) -> cdk.App:
     """Construct the fully wired CDK application.
 
@@ -49,16 +69,27 @@ def build_app(context: dict[str, object] | None = None) -> cdk.App:
     """
     app = cdk.App(context=context)
     env = resolve_env(app)
-    StorageStack(app, "StorageStack", env=env)
+
+    storage = StorageStack(app, "StorageStack", env=env)
+    IngestStack(
+        app,
+        "IngestStack",
+        env=env,
+        documents_bucket=storage.documents_bucket,
+        table=storage.table,
+        ingest_dlq=storage.ingest_dlq,
+        embedding_model_id=_require_context(app, "embeddingModelId"),
+        chunk_target_tokens=int(_require_context(app, "chunkTargetTokens")),
+        chunk_overlap_tokens=int(_require_context(app, "chunkOverlapTokens")),
+    )
     return app
 
 
 def main() -> None:
     """Synthesize the application.
 
-    Only `StorageStack` is wired up in Phase 0, and it declares no resources
-    yet — the ingest, API, frontend, and observability stacks arrive from T1.4
-    onwards (IMPLEMENTATION_PLAN.md).
+    Storage and ingestion are wired up as of Phase 1; the API, frontend, and
+    observability stacks arrive in Phase 2 and Phase 3 (IMPLEMENTATION_PLAN.md).
     """
     build_app().synth()
 

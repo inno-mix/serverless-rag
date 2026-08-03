@@ -1,0 +1,24 @@
+{
+  "version": "0",
+  "id": "17793124-05d4-b198-2fde-7ededc63b103",
+  "detail-type": "Object Created",
+  "source": "aws.s3",
+  "account": "146259920030",
+  "time": "2026-08-04T10:15:00Z",
+  "region": "us-east-1",
+  "resources": ["arn:aws:s3:::rag-documents-bucket"],
+  "detail": {
+    "version": "0",
+    "bucket": { "name": "rag-documents-bucket" },
+    "object": {
+      "key": "uploads/d_8f3a1c/q3-report.pdf",
+      "size": 1304,
+      "etag": "b1946ac92492d2347c6235b4d2611184",
+      "sequencer": "0062E99A88DC407460"
+    },
+    "request-id": "RN2BJK9EW5Z4V2TB",
+    "requester": "146259920030",
+    "source-ip-address": "203.0.113.9",
+    "reason": "PutObject"
+  }
+}
