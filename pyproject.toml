@@ -21,18 +21,20 @@ select = [
     "D",   # pydocstyle — Google-style docstrings on public shared functions
 ]
 ignore = [
-    "D203", # incompatible with D211 (blank line before class docstring)
-    "D213", # incompatible with D212 (multi-line summary position)
+    "D203",   # incompatible with D211 (blank line before class docstring)
+    "D213",   # incompatible with D212 (multi-line summary position)
+    "ANN401", # boto3 clients and DynamoDB items have no static types without
+              # boto3-stubs, which we are not adding (CLAUDE.md dependency rule)
 ]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-# Tests do not need docstrings on every function.
-"tests/**" = ["D100", "D101", "D102", "D103", "D104", "ANN201", "ANN001"]
+# Tests do not need docstrings or return annotations on every function.
+"tests/**" = ["D100", "D101", "D102", "D103", "D104", "ANN001", "ANN201", "ANN202"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/infra"]
-pythonpath = ["."]
+pythonpath = [".", "src"]
 addopts = "-ra"
