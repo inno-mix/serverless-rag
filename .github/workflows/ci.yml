@@ -1,0 +1,117 @@
+# CI for Serverless RAG Document Q&A
+#
+# Pull requests run lint + tests + `cdk synth` only — no AWS credentials are
+# available to this job and none are needed (TESTING.md §1: unit and infra
+# tests run with no AWS access and no network).
+#
+# Pushes to `main` run the same checks and then deploy via GitHub OIDC, so no
+# long-lived AWS access keys are stored in the repository.
+#
+# ---------------------------------------------------------------------------
+# Required GitHub repository configuration (Settings → Secrets and variables →
+# Actions → Variables). These are account/repo setup and are NOT created by
+# this repo's CDK app:
+#
+#   AWS_DEPLOY_ROLE_ARN   IAM role ARN assumed by the deploy job. Its trust
+#                         policy must federate token.actions.githubusercontent.com
+#                         and restrict `sub` to this repository, e.g.
+#                           "repo:<owner>/<repo>:ref:refs/heads/main"
+#                         The role needs permissions to deploy this stack set
+#                         (CloudFormation, S3, DynamoDB, Lambda, API Gateway,
+#                         CloudFront, SQS, IAM, CloudWatch, Budgets) plus
+#                         sts:AssumeRole on the CDK bootstrap roles.
+#
+#   AWS_REGION            Deployment region. Must match the `region` key in
+#                         cdk.json (us-east-1).
+#
+# Also required in the AWS account, one time:
+#   * An IAM OIDC identity provider for https://token.actions.githubusercontent.com
+#   * `cdk bootstrap aws://<account>/us-east-1`
+#
+# No secrets are required — only the two variables above.
+# ---------------------------------------------------------------------------
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+
+jobs:
+  test:
+    name: Lint, test, synth
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          npm install -g aws-cdk
+
+      # Fail-fast order per TESTING.md §6: ruff -> unit -> infra -> cdk synth.
+      - name: Lint
+        run: ruff check .
+
+      - name: Format check
+        run: ruff format --check .
+
+      - name: Unit and infra tests
+        run: pytest tests/unit tests/infra -q --cov=src/shared --cov-fail-under=80
+
+      - name: CDK synth
+        run: cdk synth --quiet
+
+  deploy:
+    name: Deploy to AWS
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # required for GitHub OIDC
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          npm install -g aws-cdk
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: CDK deploy
+        run: cdk deploy --all --require-approval never
