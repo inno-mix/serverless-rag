@@ -13,14 +13,25 @@ from botocore.exceptions import ClientError, EndpointConnectionError
 
 from shared import embeddings
 from shared.embeddings import (
+    ANTHROPIC_VERSION,
     MAX_ATTEMPTS,
     BedrockError,
     ModelResponseError,
     ModelUnavailableError,
     embed_texts,
+    generate,
 )
 
 MODEL_ID = "amazon.titan-embed-text-v2:0"
+GENERATION_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+
+
+def _completion(text: str = "hello", tokens_in: int = 12, tokens_out: int = 3) -> dict:
+    """A well-formed Anthropic-on-Bedrock InvokeModel response payload."""
+    return {
+        "content": [{"type": "text", "text": text}],
+        "usage": {"input_tokens": tokens_in, "output_tokens": tokens_out},
+    }
 
 
 class _Body:
@@ -71,6 +82,7 @@ def _validation_error() -> ClientError:
 @pytest.fixture(autouse=True)
 def _model_id(monkeypatch):
     monkeypatch.setenv("EMBEDDING_MODEL_ID", MODEL_ID)
+    monkeypatch.setenv("GENERATION_MODEL_ID", GENERATION_MODEL_ID)
 
 
 # --------------------------------------------------------------------------- #
@@ -195,6 +207,111 @@ def test_malformed_responses_raise_a_typed_error(payload):
 def test_non_numeric_embedding_raises_a_typed_error():
     with pytest.raises(ModelResponseError):
         embed_texts(["hello"], client=_StubBedrock({"embedding": [1.0, "abc"]}))
+
+
+# --------------------------------------------------------------------------- #
+# Generation (T2.2)
+# --------------------------------------------------------------------------- #
+
+
+def test_generate_returns_text_and_token_usage():
+    client = _StubBedrock(_completion("Revenue was $4.2M.", tokens_in=1450, tokens_out=210))
+    result = generate(system="rules", user="context", max_tokens=1024, client=client)
+
+    assert result.text == "Revenue was $4.2M."
+    assert result.tokens_in == 1450
+    assert result.tokens_out == 210
+
+
+def test_generate_sends_the_bedrock_anthropic_request_shape():
+    client = _StubBedrock(_completion())
+    generate(system="rules", user="question", max_tokens=512, client=client)
+
+    (call,) = client.calls
+    body = json.loads(call["body"])
+    assert call["modelId"] == GENERATION_MODEL_ID
+    assert body["anthropic_version"] == ANTHROPIC_VERSION
+    assert body["max_tokens"] == 512
+    assert body["system"] == "rules"
+    assert body["messages"] == [{"role": "user", "content": [{"type": "text", "text": "question"}]}]
+
+
+def test_generate_pins_temperature_to_zero():
+    """Grounded answering is not a creative task; repeat runs should match."""
+    client = _StubBedrock(_completion())
+    generate(system="rules", user="question", max_tokens=64, client=client)
+    assert json.loads(client.calls[0]["body"])["temperature"] == 0.0
+
+
+def test_generate_respects_the_max_tokens_cap():
+    """NFR-4 caps generation at the configured maxTokens context value."""
+    client = _StubBedrock(_completion())
+    generate(system="rules", user="question", max_tokens=1024, client=client)
+    assert json.loads(client.calls[0]["body"])["max_tokens"] <= 1024
+
+
+def test_generate_joins_text_blocks_and_ignores_other_block_types():
+    payload = {
+        "content": [
+            {"type": "text", "text": "first "},
+            {"type": "thinking", "thinking": "should not leak"},
+            {"type": "text", "text": "second"},
+        ],
+        "usage": {"input_tokens": 1, "output_tokens": 2},
+    }
+    result = generate(system="s", user="u", max_tokens=64, client=_StubBedrock(payload))
+    assert result.text == "first second"
+
+
+def test_generate_defaults_missing_usage_to_zero():
+    client = _StubBedrock({"content": [{"type": "text", "text": "answer"}]})
+    result = generate(system="s", user="u", max_tokens=64, client=client)
+    assert (result.tokens_in, result.tokens_out) == (0, 0)
+
+
+def test_generate_explicit_model_id_overrides_the_environment():
+    client = _StubBedrock(_completion())
+    generate(system="s", user="u", max_tokens=64, client=client, model_id="override")
+    assert client.calls[0]["modelId"] == "override"
+
+
+def test_generate_missing_model_id_env_var_is_a_configuration_error(monkeypatch):
+    monkeypatch.delenv("GENERATION_MODEL_ID", raising=False)
+    with pytest.raises(BedrockError, match="GENERATION_MODEL_ID"):
+        generate(system="s", user="u", max_tokens=64, client=_StubBedrock(_completion()))
+
+
+def test_generate_shares_the_embedding_retry_policy():
+    client = _StubBedrock(_throttle(), _completion("recovered"))
+    sleeps = _Sleeps()
+
+    result = generate(system="s", user="u", max_tokens=64, client=client, sleep=sleeps)
+
+    assert result.text == "recovered"
+    assert len(client.calls) == 2
+    assert len(sleeps.delays) == 1
+
+
+def test_generate_raises_model_unavailable_after_three_attempts():
+    client = _StubBedrock(*[_throttle() for _ in range(MAX_ATTEMPTS)])
+    with pytest.raises(ModelUnavailableError, match="after 3 attempts"):
+        generate(system="s", user="u", max_tokens=64, client=client, sleep=_Sleeps())
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"usage": {"input_tokens": 1, "output_tokens": 1}},  # no content key
+        {"content": "not-a-list"},
+        {"content": []},  # no blocks at all
+        {"content": [{"type": "text", "text": "   "}]},  # whitespace only
+        {"content": [{"type": "tool_use", "id": "t1"}]},  # no text block
+        b"[]",  # valid JSON, but not an object
+    ],
+)
+def test_generate_malformed_responses_raise_a_typed_error(payload):
+    with pytest.raises(ModelResponseError):
+        generate(system="s", user="u", max_tokens=64, client=_StubBedrock(payload))
 
 
 # --------------------------------------------------------------------------- #

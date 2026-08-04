@@ -32,7 +32,18 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 # Tests do not need docstrings or return annotations on every function.
-"tests/**" = ["D100", "D101", "D102", "D103", "D104", "ANN001", "ANN201", "ANN202"]
+"tests/**" = [
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    "D104",
+    "ANN001",
+    "ANN002",
+    "ANN003",
+    "ANN201",
+    "ANN202",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/infra"]

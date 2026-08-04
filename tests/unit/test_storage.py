@@ -4,10 +4,7 @@ Backed by moto, so the single-table design, the GSI, and DynamoDB's 25-item
 batch limit are exercised for real without touching AWS.
 """
 
-import boto3
 import numpy as np
-import pytest
-from moto import mock_aws
 
 from shared.storage import (
     ChunkRecord,
@@ -23,45 +20,6 @@ from shared.storage import (
     unpack_vector,
     update_status,
 )
-
-
-@pytest.fixture(autouse=True)
-def _aws_credentials(monkeypatch):
-    """Moto refuses to run against ambient credentials; give it dummies."""
-    for name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
-        monkeypatch.setenv(name, "testing")
-    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
-
-
-@pytest.fixture
-def table():
-    """A moto-backed table mirroring StorageStack's schema."""
-    with mock_aws():
-        resource = boto3.resource("dynamodb", region_name="us-east-1")
-        yield resource.create_table(
-            TableName="rag-store",
-            KeySchema=[
-                {"AttributeName": "PK", "KeyType": "HASH"},
-                {"AttributeName": "SK", "KeyType": "RANGE"},
-            ],
-            AttributeDefinitions=[
-                {"AttributeName": "PK", "AttributeType": "S"},
-                {"AttributeName": "SK", "AttributeType": "S"},
-                {"AttributeName": "GSI1PK", "AttributeType": "S"},
-                {"AttributeName": "GSI1SK", "AttributeType": "S"},
-            ],
-            GlobalSecondaryIndexes=[
-                {
-                    "IndexName": "GSI1",
-                    "KeySchema": [
-                        {"AttributeName": "GSI1PK", "KeyType": "HASH"},
-                        {"AttributeName": "GSI1SK", "KeyType": "RANGE"},
-                    ],
-                    "Projection": {"ProjectionType": "ALL"},
-                }
-            ],
-            BillingMode="PAY_PER_REQUEST",
-        )
 
 
 def _records(count: int, dim: int = 4) -> list[ChunkRecord]:
