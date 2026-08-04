@@ -9,7 +9,9 @@ from infra.ingest_stack import IngestStack
 from infra.storage_stack import StorageStack
 from shared import storage
 
-MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+# The real configured value from cdk.json. Ingestion embeds; it never generates,
+# so passing a Claude id here would exercise a code path this stack never takes.
+MODEL_ID = "amazon.titan-embed-text-v2:0"
 
 
 @pytest.fixture(scope="module")
@@ -114,20 +116,30 @@ def test_bedrock_permission_is_scoped_to_the_configured_model(template):
             assert "bedrock" in rendered
 
 
-def test_bedrock_permission_covers_every_region_the_profile_routes_to(template):
-    """A regional inference profile fans out; granting one region alone 403s."""
-    policies = template.find_resources("AWS::IAM::Policy")
+def test_bedrock_permission_names_the_model_id_in_full(template):
+    """Regression guard: the provider prefix is part of the model id.
+
+    A foundation-model ARN ends in the complete id — `amazon.titan-embed-text-v2:0`,
+    not `titan-embed-text-v2:0`. Dropping the provider silently produces a policy
+    that grants nothing, and ingestion then fails with AccessDeniedException on
+    its first embed call.
+    """
     rendered = str(
         [
             statement
-            for policy in policies.values()
+            for policy in template.find_resources("AWS::IAM::Policy").values()
             for statement in policy["Properties"]["PolicyDocument"]["Statement"]
             if statement.get("Action") == "bedrock:InvokeModel"
         ]
     )
-    for region in ("us-east-1", "us-east-2", "us-west-2"):
-        assert region in rendered
-    assert "inference-profile" in rendered
+    assert f"foundation-model/{MODEL_ID}" in rendered
+
+
+def test_ingestion_is_not_granted_the_generation_model(template):
+    """The ingest role embeds only; it has no reason to reach Claude (NFR-9)."""
+    rendered = str(template.find_resources("AWS::IAM::Policy"))
+    assert "anthropic" not in rendered
+    assert "inference-profile" not in rendered
 
 
 def test_stack_exports_wiring_outputs(template):

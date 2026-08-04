@@ -18,6 +18,8 @@ from aws_cdk import aws_s3 as s3
 from aws_cdk import aws_sqs as sqs
 from constructs import Construct
 
+from infra.bedrock_policy import invoke_model_policy
+
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SHARED_SRC = _REPO_ROOT / "src" / "shared"
 
@@ -34,6 +36,9 @@ LAYER_DEPENDENCIES = ("numpy>=2.1.0,<3", "pypdf>=5.1.0,<6")
 #: the layer is built on an arm64 developer machine.
 PIP_PLATFORM = "manylinux2014_x86_64"
 PYTHON_VERSION = "3.12"
+
+#: Never ship a developer machine's bytecode cache in a function asset.
+ASSET_EXCLUDES = ["__pycache__", "*.pyc"]
 
 
 @jsii.implements(cdk.ILocalBundling)
@@ -79,7 +84,13 @@ class _LocalPipBundling:
         except (subprocess.CalledProcessError, OSError):
             return False
 
-        shutil.copytree(_SHARED_SRC, target / "shared", dirs_exist_ok=True)
+        shutil.copytree(
+            _SHARED_SRC,
+            target / "shared",
+            dirs_exist_ok=True,
+            # Locally compiled bytecode has no business in a deployed artifact.
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
         return True
 
 
@@ -166,7 +177,9 @@ class IngestStack(cdk.Stack):
             runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.X86_64,
             handler="handler.handler",
-            code=lambda_.Code.from_asset(str(_REPO_ROOT / "src" / "ingest")),
+            code=lambda_.Code.from_asset(
+                str(_REPO_ROOT / "src" / "ingest"), exclude=ASSET_EXCLUDES
+            ),
             layers=[self.shared_layer],
             memory_size=512,
             timeout=cdk.Duration.seconds(300),
@@ -189,9 +202,7 @@ class IngestStack(cdk.Stack):
         documents_bucket.grant_read(self.function)
         table.grant_read_write_data(self.function)
         ingest_dlq.grant_send_messages(self.function)
-        self.function.add_to_role_policy(
-            _invoke_model_policy(self, embedding_model_id),
-        )
+        self.function.add_to_role_policy(invoke_model_policy(self, embedding_model_id))
 
         # EventBridge rather than a direct bucket notification, so the rule lives
         # here and nothing in StorageStack has to reference this stack (ADR-006).
@@ -216,40 +227,3 @@ class IngestStack(cdk.Stack):
 
         cdk.CfnOutput(self, "IngestFunctionName", value=self.function.function_name)
         cdk.CfnOutput(self, "SharedLayerArn", value=self.shared_layer.layer_version_arn)
-
-
-def _invoke_model_policy(stack: cdk.Stack, model_id: str) -> Any:
-    """Least-privilege `bedrock:InvokeModel` for one configured model.
-
-    A regional inference profile is not itself invocable: the caller needs the
-    profile ARN *and* the underlying foundation-model ARN in every region the
-    profile can route to. Scoping to the requested region alone yields
-    `AccessDeniedException` the first time Bedrock routes elsewhere, so the
-    routed regions are granted explicitly. This is narrower than a wildcard and
-    broader than the two ARNs ARCHITECTURE.md §7 anticipated.
-    """
-    from aws_cdk import aws_iam as iam
-
-    resources = [
-        stack.format_arn(
-            service="bedrock",
-            region=region,
-            account="",
-            resource="foundation-model",
-            resource_name=model_id.split(".", 1)[-1] if "." in model_id else model_id,
-        )
-        for region in ("us-east-1", "us-east-2", "us-west-2")
-    ]
-    if model_id.startswith(("us.", "global.")):
-        resources.append(
-            stack.format_arn(
-                service="bedrock",
-                resource="inference-profile",
-                resource_name=model_id,
-            )
-        )
-
-    return iam.PolicyStatement(
-        actions=["bedrock:InvokeModel"],
-        resources=resources,
-    )

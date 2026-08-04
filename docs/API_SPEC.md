@@ -18,15 +18,29 @@ Response `201`:
 ```json
 {
   "doc_id": "d_8f3a1c",
-  "upload_url": "https://<bucket>.s3.amazonaws.com/...",
-  "method": "PUT",
+  "upload_url": "https://<bucket>.s3.amazonaws.com/",
+  "method": "POST",
+  "fields": {
+    "key": "uploads/d_8f3a1c/q3-report.pdf",
+    "Content-Type": "application/pdf",
+    "policy": "<base64 policy document>",
+    "x-amz-algorithm": "AWS4-HMAC-SHA256",
+    "x-amz-credential": "...",
+    "x-amz-date": "...",
+    "x-amz-signature": "..."
+  },
   "expires_in": 300,
   "max_bytes": 26214400
 }
 ```
-Client then `PUT`s the raw file bytes to `upload_url`. The presigned URL enforces max size and content type.
+
+The client then sends a `multipart/form-data` **POST** to `upload_url` containing every entry of `fields` followed by a `file` part carrying the bytes. The signed policy enforces the exact object key, the content type, and a `content-length-range` of 1 to `max_bytes`; S3 rejects anything outside those bounds with `400 EntityTooLarge` and the bytes never reach the bucket.
+
+**Amendment (Phase 2, T2.3).** This was originally specified as a presigned **PUT**. A presigned PUT URL cannot carry a `content-length-range` condition — only the POST policy document can — so PUT could not deliver the "rejected at presign" behaviour `ARCHITECTURE.md` §6 requires. The `fields` object is new and `method` changed from `PUT` to `POST`; nothing else about the route changed. See ADR-002.
 
 Errors: `400 UNSUPPORTED_TYPE`, `400 INVALID_FILENAME`.
+
+Filename rules beyond the length and extension checks: the name becomes part of the object key, so path separators (`/`, `\`), a leading `.`, and control characters are rejected with `400 INVALID_FILENAME`.
 
 ## 2. GET /documents — list documents
 

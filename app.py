@@ -5,6 +5,7 @@ import os
 
 import aws_cdk as cdk
 
+from infra.api_stack import ApiStack
 from infra.ingest_stack import IngestStack
 from infra.storage_stack import StorageStack
 
@@ -70,17 +71,35 @@ def build_app(context: dict[str, object] | None = None) -> cdk.App:
     app = cdk.App(context=context)
     env = resolve_env(app)
 
+    embedding_model_id = _require_context(app, "embeddingModelId")
+
     storage = StorageStack(app, "StorageStack", env=env)
-    IngestStack(
+    ingest = IngestStack(
         app,
         "IngestStack",
         env=env,
         documents_bucket=storage.documents_bucket,
         table=storage.table,
         ingest_dlq=storage.ingest_dlq,
-        embedding_model_id=_require_context(app, "embeddingModelId"),
+        embedding_model_id=embedding_model_id,
         chunk_target_tokens=int(_require_context(app, "chunkTargetTokens")),
         chunk_overlap_tokens=int(_require_context(app, "chunkOverlapTokens")),
+    )
+    ApiStack(
+        app,
+        "ApiStack",
+        env=env,
+        documents_bucket=storage.documents_bucket,
+        table=storage.table,
+        # Built once in IngestStack so every Lambda in the app runs identical
+        # shared code, rather than two copies of the same asset.
+        shared_layer=ingest.shared_layer,
+        embedding_model_id=embedding_model_id,
+        generation_model_id=_require_context(app, "generationModelId"),
+        min_similarity=float(_require_context(app, "minSimilarity")),
+        max_tokens=int(_require_context(app, "maxTokens")),
+        max_upload_mb=int(_require_context(app, "maxUploadMb")),
+        allowed_origin=_require_context(app, "allowedOrigin"),
     )
     return app
 
@@ -88,8 +107,8 @@ def build_app(context: dict[str, object] | None = None) -> cdk.App:
 def main() -> None:
     """Synthesize the application.
 
-    Storage and ingestion are wired up as of Phase 1; the API, frontend, and
-    observability stacks arrive in Phase 2 and Phase 3 (IMPLEMENTATION_PLAN.md).
+    Storage, ingestion, and the API are wired up as of Phase 2; the frontend
+    and observability stacks arrive in Phase 3 (IMPLEMENTATION_PLAN.md).
     """
     build_app().synth()
 

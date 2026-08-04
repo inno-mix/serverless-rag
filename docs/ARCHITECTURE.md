@@ -92,8 +92,9 @@ Vector storage note: store as base64-packed `float32` bytes (`struct`/`numpy.tob
 ### ADR-002: Presigned S3 upload instead of proxying files through API Gateway
 
 - **Context:** API GW has a 10 MB payload limit and charges for transfer; Lambda has payload limits too.
-- **Decision:** `POST /documents` returns a presigned PUT URL; client uploads directly to S3.
+- **Decision:** `POST /documents` returns a presigned URL; client uploads directly to S3.
 - **Consequences:** Supports 25 MB files, cheaper, and demonstrates the standard production pattern.
+- **Amendment (Phase 2, T2.3): presigned POST, not PUT.** §6 requires oversized files to be "rejected at presign (content-length condition)", but a presigned **PUT** URL cannot carry one. `generate_presigned_url` signs headers, and the only way to bound the body is to sign an exact `Content-Length`, which requires the client to declare its size up front and reports a mismatch as an opaque `403 SignatureDoesNotMatch`. Only `generate_presigned_post` produces a **policy document**, which is what can hold a `["content-length-range", 1, max_bytes]` condition alongside an exact-key and exact-content-type condition. The route therefore returns `"method": "POST"` plus a `fields` object, and the client posts `multipart/form-data` (API_SPEC.md §1). The alternative — presign a plain PUT and check the size in the ingest Lambda — was rejected because the oversized bytes would already be in the bucket by then, which is not what "rejected at presign" means.
 
 ### ADR-003: Similarity floor before generation
 
@@ -149,7 +150,7 @@ Context format sent to the model:
 | ---------------------------------------- | ---------------------------------------------------------------------------- |
 | Unsupported file type / extraction fails | status=FAILED with reason; message to SQS DLQ; no partial chunks left behind |
 | Bedrock throttling                       | retry with exponential backoff + jitter (3 attempts), then fail gracefully   |
-| Oversized file (> 25 MB)                 | rejected at presign (content-length condition on the presigned POST/PUT)     |
+| Oversized file (> 25 MB)                 | rejected by S3 against the `content-length-range` condition in the presigned POST policy (ADR-002 amendment) |
 | Empty extraction (0 chars)               | FAILED with `EMPTY_DOCUMENT`                                                 |
 | Query on empty corpus                    | not-found response, no LLM call                                              |
 
@@ -157,8 +158,9 @@ Context format sent to the model:
 
 - S3 buckets: block all public access; CloudFront OAC for the frontend bucket.
 - API: API key + usage plan (throttle 5 rps, burst 10) at MVP.
-- IAM: per-function roles; DynamoDB scoped to the table + GSI.
-- Bedrock `InvokeModel` is scoped to the configured models, but that is **more than two ARNs** (amended in Phase 1). A regional inference profile is not itself the invocable resource: the caller needs the **inference-profile ARN plus the underlying foundation-model ARN in every region the profile can route to**. For `us.anthropic.claude-haiku-4-5-…` that is us-east-1, us-east-2, and us-west-2. Granting only the deployment region yields `AccessDeniedException` the first time Bedrock routes elsewhere. Still least privilege — no wildcard resources — just a wider ARN list than originally anticipated.
+- IAM: per-function roles; DynamoDB scoped to the table + GSI. The `/documents` routes are three separate Lambdas rather than one router precisely so this is enforceable: only the delete role can remove an object, the list role is read-only, and the query role has no S3 access at all. `tests/infra/test_api_stack.py` asserts each of those.
+- Filenames supplied by clients become part of an S3 object key, so `POST /documents` rejects path separators, leading dots, and control characters before signing anything (API_SPEC.md §1).
+- Bedrock `InvokeModel` is scoped to the configured models, but that is **more than two ARNs** (amended in Phase 1). A regional inference profile is not itself the invocable resource: the caller needs the **inference-profile ARN plus the underlying foundation-model ARN in every region the profile can route to**. For `us.anthropic.claude-haiku-4-5-…` that is us-east-1, us-east-2, and us-west-2. Granting only the deployment region yields `AccessDeniedException` the first time Bedrock routes elsewhere. Still least privilege — no wildcard resources — just a wider ARN list than originally anticipated. A foundation-model ARN ends in the **complete** model id including its provider prefix (`foundation-model/amazon.titan-embed-text-v2:0`); only the `us.`/`global.` routing prefix of an inference-profile id is stripped to name the model behind it. `infra/bedrock_policy.py` is the single implementation of this rule, and `tests/infra/test_bedrock_policy.py` pins both cases.
 - No secrets in code; nothing sensitive in the repo. `.env` files gitignored.
 
 ## 8. Observability

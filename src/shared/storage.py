@@ -317,21 +317,27 @@ def list_documents(table: Any) -> list[DocumentSummary]:
 
     while True:
         page = table.query(**kwargs)
-        for item in page.get("Items", []):
-            documents.append(
-                DocumentSummary(
-                    doc_id=item["PK"].removeprefix("DOC#"),
-                    filename=item.get("filename", ""),
-                    status=item.get("status", ""),
-                    uploaded_at=item.get("uploaded_at", ""),
-                    chunk_count=_as_int(item.get("chunk_count", 0)),
-                    error_msg=item.get("error_msg"),
-                )
-            )
+        documents.extend(_to_summary(item) for item in page.get("Items", []))
         cursor = page.get("LastEvaluatedKey")
         if not cursor:
             return documents
         kwargs["ExclusiveStartKey"] = cursor
+
+
+def get_document(table: Any, doc_id: str) -> DocumentSummary | None:
+    """Read one document's metadata.
+
+    Args:
+        table: The DynamoDB table resource.
+        doc_id: Document identifier.
+
+    Returns:
+        The document summary, or `None` if no such document exists. `DELETE
+        /documents/{doc_id}` uses the `None` case to answer `404 DOC_NOT_FOUND`,
+        and the filename to locate the S3 object to remove.
+    """
+    item = table.get_item(Key={"PK": f"DOC#{doc_id}", "SK": META_SORT_KEY}).get("Item")
+    return _to_summary(item) if item else None
 
 
 def delete_document(table: Any, doc_id: str) -> bool:
@@ -394,6 +400,18 @@ def _all_item_keys(table: Any, doc_id: str) -> list[dict[str, str]]:
         if not cursor:
             return keys
         kwargs["ExclusiveStartKey"] = cursor
+
+
+def _to_summary(item: dict[str, Any]) -> DocumentSummary:
+    """Convert a metadata item into the summary shape API_SPEC.md §2 returns."""
+    return DocumentSummary(
+        doc_id=item["PK"].removeprefix("DOC#"),
+        filename=item.get("filename", ""),
+        status=item.get("status", ""),
+        uploaded_at=item.get("uploaded_at", ""),
+        chunk_count=_as_int(item.get("chunk_count", 0)),
+        error_msg=item.get("error_msg"),
+    )
 
 
 def _as_int(value: Any) -> int:

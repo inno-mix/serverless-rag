@@ -40,8 +40,25 @@ def test_cdk_json_declares_required_context():
         "minSimilarity",
         "maxTokens",
         "maxUploadMb",
+        "chunkTargetTokens",
+        "chunkOverlapTokens",
+        "allowedOrigin",
     }
     assert required <= CDK_CONTEXT.keys()
+
+
+def test_max_tokens_stays_within_the_cost_guardrail():
+    """NFR-4 caps generation output; the context value is what enforces it."""
+    assert 0 < int(CDK_CONTEXT["maxTokens"]) <= 1024
+
+
+def test_every_stack_in_the_plan_is_wired_up():
+    """Phase 2 adds the API; frontend and observability arrive in Phase 3."""
+    assert {stack.stack_name for stack in _synth().stacks} == {
+        "StorageStack",
+        "IngestStack",
+        "ApiStack",
+    }
 
 
 def test_generation_model_is_an_inference_profile():

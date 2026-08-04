@@ -18,6 +18,9 @@
 
     "minSimilarity": 0.35,
     "maxTokens": 1024,
-    "maxUploadMb": 25
+    "maxUploadMb": 25,
+
+    "_allowedOriginNote": "CORS origin for the API (API_SPEC.md §7). Stays '*' until FrontendStack exists; T3.1 replaces it with the deployed CloudFront domain, which is only knowable after that stack's first deploy.",
+    "allowedOrigin": "*"
   }
 }
