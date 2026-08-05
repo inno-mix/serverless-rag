@@ -23,7 +23,17 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 readonly BOLD=$'\033[1m' RED=$'\033[31m' GREEN=$'\033[32m' YELLOW=$'\033[33m' DIM=$'\033[2m' OFF=$'\033[0m'
 
 CHECK_ONLY=false
-[[ "${1:-}" == "--check" ]] && CHECK_ONLY=true
+CDK_ARGS=()
+for arg in "$@"; do
+  if [[ "$arg" == "--check" ]]; then
+    CHECK_ONLY=true
+  else
+    # Anything else is forwarded to `cdk deploy`, which is how a value can be
+    # supplied without committing it — notably:
+    #   ./scripts/deploy.sh --context alertEmail=you@example.com
+    CDK_ARGS+=("$arg")
+  fi
+done
 
 ok()   { printf '  %s✓%s %s\n' "$GREEN" "$OFF" "$1"; }
 warn() { printf '  %s!%s %s\n' "$YELLOW" "$OFF" "$1"; }
@@ -104,7 +114,7 @@ fi
 
 step "Deploying"
 printf '%sFive stacks. CloudFront takes most of the ~10 minutes.%s\n\n' "$DIM" "$OFF"
-$CDK deploy --all --require-approval never --outputs-file cdk-outputs.json
+$CDK deploy --all --require-approval never --outputs-file cdk-outputs.json "${CDK_ARGS[@]+"${CDK_ARGS[@]}"}"
 
 SITE_URL=$(python3 -c "
 import json
