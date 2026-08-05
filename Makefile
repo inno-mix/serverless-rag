@@ -4,7 +4,7 @@
 #   make deploy    preflight, then deploy everything
 #   make destroy   remove everything, and verify it is gone
 
-.PHONY: help install check lint test synth deploy preflight smoke destroy clean
+.PHONY: help install check lint test synth deploy deploy-frontend preflight smoke destroy clean
 
 PY := python3.12
 VENV := .venv
@@ -16,6 +16,7 @@ help:
 	@printf '  make check      lint, tests, and cdk synth (what CI runs)\n'
 	@printf '  make preflight  check credentials, bootstrap, Bedrock access\n'
 	@printf '  make deploy     preflight, then deploy all five stacks\n'
+	@printf '  make deploy-frontend   push frontend/ only (seconds, not minutes)\n'
 	@printf '  make smoke      end-to-end test against the deployed stack\n'
 	@printf '  make destroy    delete everything, then verify nothing remains\n'
 	@printf '  make clean      remove build artefacts (no AWS resources)\n\n'
@@ -44,6 +45,12 @@ preflight:
 
 deploy:
 	@./scripts/deploy.sh
+
+# Static files only, straight to S3 plus a CloudFront invalidation. Skips
+# CloudFormation entirely, which is the difference between seconds and minutes
+# when iterating on the UI.
+deploy-frontend:
+	@./scripts/deploy-frontend.sh
 
 smoke:
 	$(BIN)/pytest tests/integration -q

@@ -25,9 +25,14 @@ _FRONTEND_SRC = Path(__file__).resolve().parents[1] / "frontend"
 #: request for `/v1/query` reaches the API's own `/v1/query`.
 API_PATH_PATTERN = "/v1/*"
 
-#: Files that must never be cached by the browser, so a redeploy is visible
-#: immediately rather than after the default TTL.
-NO_CACHE_OBJECTS = ["/index.html"]
+#: Paths invalidated on every deploy.
+#:
+#: This has to be everything, not just index.html. None of the assets are
+#: content-hashed — `styles.css` keeps its name across deploys — and they are
+#: served with no `Cache-Control`, so CloudFront holds them at its default TTL
+#: of 24 hours. Invalidating only the HTML would leave a stylesheet change
+#: invisible for a day while the deploy reported success.
+INVALIDATION_PATHS = ["/*"]
 
 
 class FrontendStack(cdk.Stack):
@@ -119,7 +124,7 @@ class FrontendStack(cdk.Stack):
             sources=[s3_deployment.Source.asset(str(_FRONTEND_SRC))],
             destination_bucket=self.site_bucket,
             distribution=self.distribution,
-            distribution_paths=NO_CACHE_OBJECTS,
+            distribution_paths=INVALIDATION_PATHS,
         )
 
         cdk.CfnOutput(self, "SiteUrl", value=f"https://{self.distribution.domain_name}")

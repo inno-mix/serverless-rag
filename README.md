@@ -89,6 +89,15 @@ Roughly 10 minutes, most of it CloudFront. To check without changing anything:
 make preflight     # or: ./scripts/deploy.sh --check
 ```
 
+Iterating on the UI does not need any of that. `frontend/` is three static files, so pushing a change is a sync and an invalidation rather than a CloudFormation round trip:
+
+```bash
+make deploy-frontend        # seconds
+./scripts/deploy-frontend.sh --dry-run   # show what would change
+```
+
+The stack stays the source of truth — the next `make deploy` re-uploads from the committed asset and overwrites anything pushed this way, so keep `frontend/` in git.
+
 ### 3. Verify (optional)
 
 ```bash
@@ -158,6 +167,7 @@ app.py                    CDK entry point; wires the five stacks
 cdk.json                  Model IDs, region, thresholds — all configuration
 scripts/
   deploy.sh                 preflight (creds, bootstrap, Bedrock) then deploy
+  deploy-frontend.sh        static files only: S3 sync + CloudFront invalidation
   destroy.sh                destroy, sweep what CFN leaves, verify by tag
 infra/                    One stack per concern
   storage_stack.py          S3 bucket, DynamoDB table, DLQ

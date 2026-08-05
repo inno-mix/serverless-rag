@@ -109,6 +109,24 @@ def test_the_app_is_deployed_into_the_bucket(template):
     template.resource_count_is("Custom::CDKBucketDeployment", 1)
 
 
+def test_a_deploy_invalidates_every_path(template):
+    """Invalidating only the HTML would ship a stylesheet change into a void.
+
+    None of the assets are content-hashed — `styles.css` keeps its name across
+    deploys — and they carry no `Cache-Control`, so CloudFront holds them at its
+    default 24-hour TTL. A deploy that invalidated just `/index.html` would
+    report success while the edge kept serving yesterday's CSS.
+    """
+    (deployment,) = template.find_resources("Custom::CDKBucketDeployment").values()
+    assert deployment["Properties"]["DistributionPaths"] == ["/*"]
+
+
+def test_removed_files_are_pruned_from_the_bucket(template):
+    """A renamed asset must not linger and keep being served."""
+    (deployment,) = template.find_resources("Custom::CDKBucketDeployment").values()
+    assert deployment["Properties"]["Prune"] is True
+
+
 # --------------------------------------------------------------------------- #
 # Distribution
 # --------------------------------------------------------------------------- #
