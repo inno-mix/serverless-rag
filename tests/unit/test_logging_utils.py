@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from shared.logging_utils import get_logger
+from shared.logging_utils import METRIC_NAMESPACE, get_logger
 
 
 def _lines(stream: io.StringIO) -> list[dict]:
@@ -93,3 +93,87 @@ def test_handlers_are_not_duplicated_across_calls(stream):
     log.info("once")
 
     assert len(_lines(stream)) == 1
+
+
+# --------------------------------------------------------------------------- #
+# Embedded Metric Format (T3.2, ARCHITECTURE.md §8)
+# --------------------------------------------------------------------------- #
+
+
+def test_metrics_emit_one_embedded_metric_format_line(stream):
+    log = get_logger("test.emf", stream=stream)
+    log.metrics("query.answered", {"TokensIn": 1450, "TokensOut": 210})
+
+    (line,) = _lines(stream)
+    assert "_aws" in line
+    assert line["event"] == "query.answered"
+
+
+def test_metric_values_are_top_level_siblings_of_the_aws_block(stream):
+    """CloudWatch reads the values from the same object, not a nested one."""
+    log = get_logger("test.emf.values", stream=stream)
+    log.metrics("query.answered", {"TokensIn": 1450, "TokensOut": 210})
+
+    (line,) = _lines(stream)
+    assert line["TokensIn"] == 1450
+    assert line["TokensOut"] == 210
+
+
+def test_declared_metrics_match_the_values_present(stream):
+    log = get_logger("test.emf.declared", stream=stream)
+    log.metrics("query.answered", {"TokensIn": 1, "TokensOut": 2})
+
+    (line,) = _lines(stream)
+    (directive,) = line["_aws"]["CloudWatchMetrics"]
+    assert {metric["Name"] for metric in directive["Metrics"]} == {"TokensIn", "TokensOut"}
+    assert directive["Namespace"] == METRIC_NAMESPACE
+
+
+def test_dimensions_are_declared_and_present(stream):
+    log = get_logger("test.emf.dimensions", stream=stream)
+    log.metrics("query.answered", {"TokensIn": 1}, dimensions={"Service": "query"})
+
+    (line,) = _lines(stream)
+    (directive,) = line["_aws"]["CloudWatchMetrics"]
+    assert directive["Dimensions"] == [["Service"]]
+    assert line["Service"] == "query"
+
+
+def test_units_default_to_count_and_can_be_overridden(stream):
+    log = get_logger("test.emf.units", stream=stream)
+    log.metrics(
+        "query.answered",
+        {"TokensIn": 1, "QueryLatency": 2870},
+        units={"QueryLatency": "Milliseconds"},
+    )
+
+    (line,) = _lines(stream)
+    (directive,) = line["_aws"]["CloudWatchMetrics"]
+    units = {metric["Name"]: metric["Unit"] for metric in directive["Metrics"]}
+    assert units == {"TokensIn": "Count", "QueryLatency": "Milliseconds"}
+
+
+def test_extra_fields_are_logged_but_not_published_as_metrics(stream):
+    log = get_logger("test.emf.fields", stream=stream)
+    log.metrics("query.answered", {"TokensIn": 1}, citations=3)
+
+    (line,) = _lines(stream)
+    (directive,) = line["_aws"]["CloudWatchMetrics"]
+    assert line["citations"] == 3
+    assert "citations" not in {metric["Name"] for metric in directive["Metrics"]}
+
+
+def test_no_metrics_writes_nothing(stream):
+    log = get_logger("test.emf.empty", stream=stream)
+
+    assert log.metrics("query.answered", {}) == {}
+    assert _lines(stream) == []
+
+
+def test_the_timestamp_is_in_milliseconds(stream):
+    log = get_logger("test.emf.timestamp", stream=stream)
+    log.metrics("query.answered", {"TokensIn": 1})
+
+    (line,) = _lines(stream)
+    # Seconds would be ~1.7e9; milliseconds ~1.7e12.
+    assert line["_aws"]["Timestamp"] > 1_000_000_000_000

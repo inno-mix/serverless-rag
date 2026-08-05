@@ -48,6 +48,9 @@ NOT_FOUND_ANSWER = "I couldn't find anything about that in your documents."
 #: Inline citation markers, e.g. `[chunk_00007]`.
 CITATION_PATTERN = re.compile(r"\[(chunk_\d+)\]")
 
+#: Dimension value for this route's custom metrics (ARCHITECTURE.md §8).
+SERVICE_NAME = "query"
+
 #: Grounding rules from ARCHITECTURE.md §5. The three requirements are stated
 #: as absolutes because a hedged instruction produces hedged grounding.
 SYSTEM_PROMPT = """You answer questions about a user's private documents.
@@ -246,8 +249,16 @@ def answer_question(
 
     citations = extract_citations(completion.text, results, filenames)
     latency_ms = _elapsed_ms(started)
-    log.info(
+    log.metrics(
         "query.answered",
+        {
+            "TokensIn": completion.tokens_in,
+            "TokensOut": completion.tokens_out,
+            "QueryLatency": latency_ms,
+            "TopScore": round(best, 4),
+        },
+        dimensions={"Service": SERVICE_NAME},
+        units={"QueryLatency": "Milliseconds", "TopScore": "None"},
         top_score=round(best, 4),
         citations=len(citations),
         tokens_in=completion.tokens_in,

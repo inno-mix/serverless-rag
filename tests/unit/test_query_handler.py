@@ -10,6 +10,7 @@ property, and a regression in it would silently turn the system into a
 hallucination machine.
 """
 
+import io
 import json
 
 import numpy as np
@@ -31,6 +32,7 @@ from query.handler import (
     parse_request,
 )
 from shared.embeddings import Generation, ModelUnavailableError
+from shared.logging_utils import get_logger
 from shared.storage import (
     ChunkRecord,
     DocumentStatus,
@@ -583,6 +585,82 @@ def test_handler_never_leaks_internal_detail(api_env, monkeypatch):
 def test_env_readers_use_the_configured_values(api_env):
     assert query_handler.min_similarity() == FLOOR
     assert query_handler.max_tokens() == MAX_TOKENS
+
+
+# --------------------------------------------------------------------------- #
+# Observability (T3.2)
+# --------------------------------------------------------------------------- #
+
+
+def test_an_answered_query_logs_the_documented_fields(table, monkeypatch):
+    """T3.2 AC: one JSON line carrying latency_ms, top_score, and tokens_out."""
+    stream = io.StringIO()
+    monkeypatch.setattr(query_handler, "log", get_logger("test.query", stream=stream))
+    _seed(table, "d_1", "q3-report.pdf", [1.0, 0.0])
+
+    answer_question(
+        table=table,
+        question="What was revenue?",
+        k=5,
+        min_similarity=FLOOR,
+        max_tokens=MAX_TOKENS,
+        embed=_Embedder([1.0, 0.0]),
+        generate=_Generator(Generation(text="A [chunk_00000].", tokens_in=1450, tokens_out=210)),
+    )
+
+    lines = [json.loads(line) for line in stream.getvalue().splitlines() if line]
+    (answered,) = [line for line in lines if line["event"] == "query.answered"]
+    assert {"latency_ms", "top_score", "tokens_out"} <= answered.keys()
+    assert answered["tokens_out"] == 210
+
+
+def test_an_answered_query_publishes_token_metrics(table, monkeypatch):
+    """Token counters reach CloudWatch as EMF, not a PutMetricData call (§8)."""
+    stream = io.StringIO()
+    monkeypatch.setattr(query_handler, "log", get_logger("test.query.emf", stream=stream))
+    _seed(table, "d_1", "q3-report.pdf", [1.0, 0.0])
+
+    answer_question(
+        table=table,
+        question="What was revenue?",
+        k=5,
+        min_similarity=FLOOR,
+        max_tokens=MAX_TOKENS,
+        embed=_Embedder([1.0, 0.0]),
+        generate=_Generator(Generation(text="A [chunk_00000].", tokens_in=1450, tokens_out=210)),
+    )
+
+    lines = [json.loads(line) for line in stream.getvalue().splitlines() if line]
+    (emf,) = [line for line in lines if "_aws" in line]
+    (directive,) = emf["_aws"]["CloudWatchMetrics"]
+
+    assert {metric["Name"] for metric in directive["Metrics"]} == {
+        "TokensIn",
+        "TokensOut",
+        "QueryLatency",
+        "TopScore",
+    }
+    assert emf["Service"] == query_handler.SERVICE_NAME
+    assert emf["TokensIn"] == 1450
+
+
+def test_a_skipped_generation_publishes_no_token_metrics(table, monkeypatch):
+    """Below the floor there is no model call, so there is nothing to meter."""
+    stream = io.StringIO()
+    monkeypatch.setattr(query_handler, "log", get_logger("test.query.floor", stream=stream))
+    _seed(table, "d_1", "q3-report.pdf", [1.0, 0.0])
+
+    answer_question(
+        table=table,
+        question="Who won the 1998 World Cup?",
+        k=5,
+        min_similarity=FLOOR,
+        max_tokens=MAX_TOKENS,
+        embed=_Embedder([3.0, 10.0]),
+        generate=_Generator(),
+    )
+
+    assert "_aws" not in stream.getvalue()
 
 
 def test_table_resource_is_cached(monkeypatch, aws):

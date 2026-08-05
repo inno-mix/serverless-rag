@@ -20,7 +20,10 @@
     "maxTokens": 1024,
     "maxUploadMb": 25,
 
-    "_allowedOriginNote": "CORS origin for the API (API_SPEC.md §7). Stays '*' until FrontendStack exists; T3.1 replaces it with the deployed CloudFront domain, which is only knowable after that stack's first deploy.",
-    "allowedOrigin": "*"
+    "_allowedOriginNote": "CORS origin for direct calls to the execute-api URL. The deployed UI is same-origin behind CloudFront (ADR-008), so the browser never relies on this and '*' is not a weakening: the API key, which CORS cannot supply, is still required. Set a specific origin if you expose the API to another site.",
+    "allowedOrigin": "*",
+
+    "_alertEmailNote": "Optional. Address subscribed to the CloudWatch alarms and the $5 budget. Left empty so no personal address is committed to the repository; the alarms and budget are created either way, they simply have no delivery target until this is set.",
+    "alertEmail": ""
   }
 }

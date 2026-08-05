@@ -6,7 +6,9 @@ import os
 import aws_cdk as cdk
 
 from infra.api_stack import ApiStack
+from infra.frontend_stack import FrontendStack
 from infra.ingest_stack import IngestStack
+from infra.observability_stack import ObservabilityStack
 from infra.storage_stack import StorageStack
 
 
@@ -85,7 +87,7 @@ def build_app(context: dict[str, object] | None = None) -> cdk.App:
         chunk_target_tokens=int(_require_context(app, "chunkTargetTokens")),
         chunk_overlap_tokens=int(_require_context(app, "chunkOverlapTokens")),
     )
-    ApiStack(
+    api = ApiStack(
         app,
         "ApiStack",
         env=env,
@@ -101,15 +103,37 @@ def build_app(context: dict[str, object] | None = None) -> cdk.App:
         max_upload_mb=int(_require_context(app, "maxUploadMb")),
         allowed_origin=_require_context(app, "allowedOrigin"),
     )
+    FrontendStack(
+        app,
+        "FrontendStack",
+        env=env,
+        api=api.api,
+        # A deploy-time reference, not the key itself: CloudFront resolves it
+        # and forwards it to the origin, so it never reaches a browser (ADR-008).
+        api_key_value=api.api_key_value,
+    )
+    ObservabilityStack(
+        app,
+        "ObservabilityStack",
+        env=env,
+        functions={
+            "ingest": ingest.function,
+            "presign": api.presign_function,
+            "list": api.list_function,
+            "delete": api.delete_function,
+            "query": api.query_function,
+        },
+        api=api.api,
+        ingest_dlq=storage.ingest_dlq,
+        # Optional: alarms and the budget exist either way, but only deliver
+        # when an address is configured.
+        alert_email=str(app.node.try_get_context("alertEmail") or ""),
+    )
     return app
 
 
 def main() -> None:
-    """Synthesize the application.
-
-    Storage, ingestion, and the API are wired up as of Phase 2; the frontend
-    and observability stacks arrive in Phase 3 (IMPLEMENTATION_PLAN.md).
-    """
+    """Synthesize the application: storage, ingestion, API, frontend, observability."""
     build_app().synth()
 
 

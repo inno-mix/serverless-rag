@@ -43,6 +43,7 @@ def test_cdk_json_declares_required_context():
         "chunkTargetTokens",
         "chunkOverlapTokens",
         "allowedOrigin",
+        "alertEmail",
     }
     assert required <= CDK_CONTEXT.keys()
 
@@ -53,12 +54,23 @@ def test_max_tokens_stays_within_the_cost_guardrail():
 
 
 def test_every_stack_in_the_plan_is_wired_up():
-    """Phase 2 adds the API; frontend and observability arrive in Phase 3."""
+    """One stack per concern, as laid out in ARCHITECTURE.md §2."""
     assert {stack.stack_name for stack in _synth().stacks} == {
         "StorageStack",
         "IngestStack",
         "ApiStack",
+        "FrontendStack",
+        "ObservabilityStack",
     }
+
+
+def test_no_personal_data_is_committed_in_context():
+    """CLAUDE.md: nothing sensitive in code or git history.
+
+    `alertEmail` is deliberately empty in the committed `cdk.json`; an operator
+    sets their own address locally.
+    """
+    assert CDK_CONTEXT["alertEmail"] == ""
 
 
 def test_generation_model_is_an_inference_profile():
