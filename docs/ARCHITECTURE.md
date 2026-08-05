@@ -26,8 +26,12 @@ QUERY (sync, request/response)
                                 ├─ if max sim < MIN_SIMILARITY → "not found" (no LLM call)
                                 └─ Bedrock Claude (context + question) ──▶ answer + citations
 
-FRONTEND:  S3 (static site) ──▶ CloudFront
+FRONTEND:  browser ──▶ CloudFront ─┬─ /*     ──▶ S3 (static site, private, OAC)
+                                   └─ /v1/*  ──▶ API GW  (+ x-api-key injected)
 ```
+
+The single distribution is what makes the browser's API calls same-origin and
+keeps the API key out of the client (ADR-008).
 
 ## 2. Repository layout
 
@@ -127,6 +131,14 @@ Vector storage note: store as base64-packed `float32` bytes (`struct`/`numpy.tob
 - **Context:** §2 says shared code ships as a layer, but the layer also needs `numpy` (a binary wheel) and `pypdf`. CDK's normal answer is Docker bundling, which would make Docker a prerequisite for `cdk synth` — and therefore for the test suite and for the "clone and deploy" success metric in PRD §7.
 - **Decision:** Implement CDK's `ILocalBundling` escape hatch: build the layer with the local `pip`, requesting `--platform manylinux2014_x86_64 --only-binary=:all:` so Linux wheels are resolved even on an arm64 developer machine. CDK falls back to the Docker image automatically if the local build returns `False`.
 - **Consequences:** `cdk deploy` stays a single command with no Docker requirement. Tests set the `aws:cdk:bundling-stacks` context to `[]` so no suite ever shells out to pip. The layer asset hash covers both the shared sources and the pinned dependency specifiers, so bumping a pin invalidates the cached asset.
+
+### ADR-008: CloudFront fronts the API as well as the static site
+
+- **Status:** Accepted (Phase 3, T3.1)
+- **Context:** §1 shows the frontend as `S3 → CloudFront` and the API as a separate origin the browser calls directly. That arrangement forces two problems. First, the API requires `x-api-key` on every request, so a static page has to hold a credential that any visitor can read — and the PRD's demo scenario (§4: a hiring manager opens the URL and uploads a PDF) rules out asking them to supply one. Second, cross-origin calls need the CloudFront domain in the API's CORS configuration, but that domain does not exist until the frontend stack has deployed, and the frontend stack already depends on the API — the same cycle shape as ADR-006.
+- **Decision:** Serve both from one distribution. The default behavior targets the private site bucket through Origin Access Control; a `/v1/*` behavior targets the REST API with caching disabled, `ALL_VIEWER_EXCEPT_HOST_HEADER`, and `x-api-key` attached as a **custom origin header**. The key's value is generated at deploy time into a Secrets Manager secret and referenced — never literal — by both the `ApiKey` resource and the CloudFront header.
+- **Consequences:** The key exists in neither the repository nor the browser; DevTools shows an unauthenticated same-origin `fetch`. CORS disappears from the deployed path entirely, and with it the two-pass deploy, so `git clone && cdk deploy` reaches a working demo in one command (PRD §7). The `allowedOrigin` context key survives only for direct calls to the execute-api URL. Two details are load-bearing and easy to get wrong: `RestApiOrigin` defaults its origin path to the stage name, which would forward `/v1/query` as `/v1/v1/query`; and API Gateway rejects a forwarded `Host` header that is not its own. Both are pinned by tests.
+- **Residual exposure:** the resolved key is visible to anyone with `cloudfront:GetDistributionConfig` in the account. That is an account-internal audience, not the public one that publishing it in the page would create. Cognito (PRD OQ-2, T4.2) is the real fix if this ever needs to be more than a demo.
 
 ## 5. Prompt contract (query Lambda)
 

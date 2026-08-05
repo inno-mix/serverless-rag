@@ -136,4 +136,8 @@ Every non-2xx response:
 
 ## 7. CORS
 
-Allow origin: the CloudFront distribution domain (CDK-wired, not `*` in deployed envs). Allow headers: `Content-Type, x-api-key`. Methods: `GET, POST, DELETE, OPTIONS`.
+Allow headers: `Content-Type, x-api-key`. Methods: `GET, POST, DELETE, OPTIONS`.
+
+**Amendment (Phase 3, T3.1).** The deployed UI no longer makes cross-origin calls: CloudFront serves the app and proxies `/v1/*` to this API, so the browser's requests are same-origin and no preflight occurs (ADR-008). CORS therefore applies only to direct calls to the `execute-api` URL — a developer testing from `localhost`, say — and `allowedOrigin` defaults to `*` for that case. This is not a weakening: CORS governs which page may *attempt* a request, never whether the API accepts it, and every route still requires an `x-api-key` that a cross-origin caller has no way to obtain.
+
+The documents bucket carries its own CORS rule allowing `POST` from any origin, because the browser uploads bytes straight to S3. The control on an upload is the signed policy (§1), which pins the key, the content type, and the size range.
