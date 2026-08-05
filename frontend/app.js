@@ -113,10 +113,19 @@ function renderDocuments(documents) {
   for (const document_ of documents) {
     const row = document.createElement("tr");
 
+    const counted = Boolean(document_.chunk_count);
+    const chunks = cell(counted ? String(document_.chunk_count) : "—", "numeric");
+    if (counted) {
+      // Sits beside the number only while the column header is hidden, so a
+      // narrow screen still says what the number counts.
+      chunks.dataset.label = document_.chunk_count === 1 ? "chunk" : "chunks";
+    }
+
+    row.setAttribute("role", "row");
     row.append(
-      cell(document_.filename),
+      cell(document_.filename, "name"),
       statusCell(document_),
-      cell(document_.chunk_count ? String(document_.chunk_count) : "—", "numeric"),
+      chunks,
       deleteCell(document_)
     );
     el.documentsBody.append(row);
@@ -125,6 +134,7 @@ function renderDocuments(documents) {
 
 function cell(text, className) {
   const td = document.createElement("td");
+  td.setAttribute("role", "cell");
   td.textContent = text;
   if (className) td.className = className;
   return td;
@@ -133,6 +143,9 @@ function cell(text, className) {
 function statusCell(document_) {
   const td = document.createElement("td");
   const badge = document.createElement("span");
+
+  td.setAttribute("role", "cell");
+  td.className = "state";
 
   badge.className = `badge ${document_.status.toLowerCase()}`;
   badge.textContent = document_.status;
@@ -151,6 +164,7 @@ function deleteCell(document_) {
   const td = document.createElement("td");
   const button = document.createElement("button");
 
+  td.setAttribute("role", "cell");
   button.type = "button";
   button.className = "button subtle";
   button.textContent = "Delete";
@@ -175,6 +189,8 @@ function renderMessage(text) {
   const td = document.createElement("td");
 
   row.className = "empty";
+  row.setAttribute("role", "row");
+  td.setAttribute("role", "cell");
   td.colSpan = 4;
   td.textContent = text;
   row.append(td);

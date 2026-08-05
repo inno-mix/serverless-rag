@@ -28,3 +28,6 @@ node_modules/
 
 # Deploy artefacts (may contain account-specific URLs and ids)
 cdk-outputs.json
+
+# Playwright MCP scratch output
+.playwright-mcp/
