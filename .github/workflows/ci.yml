@@ -79,8 +79,11 @@ jobs:
       - name: Format check
         run: ruff format --check .
 
-      - name: Unit and infra tests
-        run: pytest tests/unit tests/infra -q --cov=src/shared --cov-fail-under=80
+      # The eval layer joins the gate because it is offline: it replays
+      # embeddings recorded once from the real model, so it needs no AWS
+      # credentials and is deterministic (tests/eval/record.py).
+      - name: Unit, infra, and retrieval-eval tests
+        run: pytest tests/unit tests/infra tests/eval -q --cov=src/shared --cov-fail-under=80
 
       - name: CDK synth
         run: cdk synth --quiet

@@ -41,6 +41,12 @@ EXPECTED_EVIDENCE = "4.2 million"
 UNANSWERABLE_QUESTION = "What is the capital of Mongolia?"
 
 
+def _configured_floor() -> float:
+    """The deployed `minSimilarity`, read from the same place CDK reads it."""
+    context = json.loads((Path(__file__).resolve().parents[2] / "cdk.json").read_text())["context"]
+    return float(context["minSimilarity"])
+
+
 # --------------------------------------------------------------------------- #
 # Discovery
 # --------------------------------------------------------------------------- #
@@ -219,7 +225,7 @@ def _assert_answerable(client: _ApiClient, doc_id: str) -> None:
     citation = body["citations"][0]
     assert citation["doc_id"] == doc_id
     assert citation["filename"] == FIXTURE.name
-    assert citation["score"] >= 0.35
+    assert citation["score"] >= _configured_floor()
 
     # Retrieval, not phrasing: the evidence must contain the fact, however the
     # model chose to word its answer (TESTING.md §7).

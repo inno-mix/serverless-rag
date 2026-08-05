@@ -103,8 +103,13 @@ Vector storage note: store as base64-packed `float32` bytes (`struct`/`numpy.tob
 ### ADR-003: Similarity floor before generation
 
 - **Context:** RAG systems hallucinate when retrieval returns garbage; also every LLM call costs money.
-- **Decision:** If best cosine score < `MIN_SIMILARITY` (context-configurable, default 0.35), return "not found" without calling Claude.
+- **Decision:** If best cosine score < `MIN_SIMILARITY` (context-configurable), return "not found" without calling Claude.
 - **Consequences:** Prevents hallucinated answers on out-of-scope questions and saves generation cost.
+- **Amendment (Phase 4, T4.4): the default drops from 0.35 to 0.12.** The original 0.35 was a guess made before any embeddings existed to measure. The golden-set harness measured it, and it was badly wrong in the dangerous direction — not permissive, but so strict that it rejected **5 of 12 questions the corpus demonstrably answers**, including cases where the correct passage was ranked first. In production that renders as "I couldn't find anything about that" for a question whose answer is sitting at the top of the retrieval, and nothing in the test suite noticed, because every unit test asserts behaviour *relative to* whatever floor it is handed.
+  - Measured with `amazon.titan-embed-text-v2:0` over six documents and sixteen questions: answerable questions scored **0.183–0.751** at rank 1; out-of-scope questions never exceeded **0.080**. The populations separate cleanly, but 0.35 sits well inside the answerable band rather than in the gap.
+  - 0.12 is the geometric mean of that gap, giving roughly 1.5x clearance in both directions. `tests/eval/test_golden_set.py` fails if the configured value leaves the measured band, so the number cannot drift back to a guess.
+  - **This value is model-specific.** Cosine distributions differ between embedding models; changing `embeddingModelId` invalidates it. Re-run `python tests/eval/record.py` and let the gate re-derive the band.
+  - The floor's job is narrow: reject questions with no topical relationship to the corpus. Questions that are topically adjacent but unanswerable — "what was Q4 revenue?" against a corpus holding Q2 and Q3 — *should* clear the floor and be declined by the model's `NOT_FOUND` reply instead. Trying to make the floor catch those too is what produced the 0.35 mistake.
 
 ### ADR-004: No LangChain / LlamaIndex
 

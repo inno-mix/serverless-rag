@@ -46,6 +46,6 @@ convention = "google"
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests/unit", "tests/infra"]
+testpaths = ["tests/unit", "tests/infra", "tests/eval"]
 pythonpath = [".", "src"]
 addopts = "-ra"

@@ -58,7 +58,7 @@ LLMs cannot answer questions about private documents, and pasting whole document
 - FR-2.1: `POST /query` accepts `{"question": str, "top_k": int (default 5, max 10)}`.
 - FR-2.2: Embed the question with the SAME embedding model used at ingestion.
 - FR-2.3: Retrieve top-k chunks by cosine similarity computed in Lambda (brute force over stored vectors).
-- FR-2.4: If the best similarity score < `MIN_SIMILARITY` (default 0.35, configurable), return the "not found" response WITHOUT calling the generation model.
+- FR-2.4: If the best similarity score < `MIN_SIMILARITY` (configurable), return the "not found" response WITHOUT calling the generation model. *(The default was 0.35 when written; Phase 4 measured it against a golden set and lowered it to 0.12, because 0.35 rejected questions the corpus answered. See ADR-003. The value is specific to the configured embedding model.)*
 - FR-2.5: Otherwise call Claude on Bedrock with retrieved chunks, instructing it to answer only from context and cite chunk IDs.
 - FR-2.6: Response includes: answer text, citations array (doc name, chunk id, similarity score), latency ms, and token usage.
 

@@ -16,7 +16,8 @@
     "chunkTargetTokens": 500,
     "chunkOverlapTokens": 50,
 
-    "minSimilarity": 0.35,
+    "_minSimilarityNote": "Lowered from 0.35 to 0.12 in Phase 4 on measured evidence: with amazon.titan-embed-text-v2:0, a floor of 0.35 rejected 5 of 12 questions the golden-set corpus demonstrably answers, while out-of-scope questions never exceeded 0.080. 0.12 is the geometric mean of the observed gap (0.080, 0.183) — roughly 1.5x clearance either way. `tests/eval` fails if this value drifts outside that band. Re-measure after changing embeddingModelId (ADR-003 amendment).",
+    "minSimilarity": 0.12,
     "maxTokens": 1024,
     "maxUploadMb": 25,
 

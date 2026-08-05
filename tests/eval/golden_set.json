@@ -1,0 +1,102 @@
+{
+  "_comment": [
+    "Golden set for the retrieval regression gate (T4.4).",
+    "Answerable cases name the document that holds the answer and a distinctive",
+    "substring that must appear in a retrieved chunk. `evidence` is matched",
+    "case-insensitively against the chunk text, never against a generated answer:",
+    "TESTING.md §7 excludes model wording from the gate, and retrieval is the",
+    "part that regresses silently.",
+    "Unanswerable cases assert the ADR-003 floor rejects them, which is what",
+    "stops the system hallucinating on out-of-scope questions."
+  ],
+  "cases": [
+    {
+      "question": "What was Acme's third quarter revenue?",
+      "answerable": true,
+      "document": "acme-q3-report.md",
+      "evidence": "4.2 million dollars"
+    },
+    {
+      "question": "How many people does Acme Corporation employ?",
+      "answerable": true,
+      "document": "acme-q3-report.md",
+      "evidence": "87 people"
+    },
+    {
+      "question": "Where is the head office located?",
+      "answerable": true,
+      "document": "acme-q3-report.md",
+      "evidence": "Wellington"
+    },
+    {
+      "question": "How much cash does the company have in reserve?",
+      "answerable": true,
+      "document": "acme-q3-report.md",
+      "evidence": "5.1 million dollars"
+    },
+    {
+      "question": "What is the biggest risk to the business?",
+      "answerable": true,
+      "document": "acme-q3-report.md",
+      "evidence": "customer concentration"
+    },
+    {
+      "question": "How many days a week can I work from home?",
+      "answerable": true,
+      "document": "remote-work-policy.md",
+      "evidence": "three days per week"
+    },
+    {
+      "question": "What is the equipment stipend for remote workers?",
+      "answerable": true,
+      "document": "remote-work-policy.md",
+      "evidence": "1200 dollars"
+    },
+    {
+      "question": "Who approves an exception to the remote work policy?",
+      "answerable": true,
+      "document": "remote-work-policy.md",
+      "evidence": "head of people operations"
+    },
+    {
+      "question": "How long does the Widget Pro battery last?",
+      "answerable": true,
+      "document": "widget-pro-handbook.md",
+      "evidence": "18 hours"
+    },
+    {
+      "question": "What is the operating temperature range of the sensor?",
+      "answerable": true,
+      "document": "widget-pro-handbook.md",
+      "evidence": "minus 20 to 60 degrees"
+    },
+    {
+      "question": "How long is the warranty on the Widget Pro?",
+      "answerable": true,
+      "document": "widget-pro-handbook.md",
+      "evidence": "24-month warranty"
+    },
+    {
+      "question": "How many readings can the device store internally?",
+      "answerable": true,
+      "document": "widget-pro-handbook.md",
+      "evidence": "500,000 readings"
+    },
+    {
+      "question": "What is the capital of Mongolia?",
+      "answerable": false
+    },
+    {
+      "question": "How do I make sourdough bread starter from scratch?",
+      "answerable": false
+    },
+    {
+      "question": "Who won the 1998 football World Cup final?",
+      "answerable": false
+    },
+    {
+      "question": "What is the recommended dosage of ibuprofen for a child?",
+      "answerable": false
+    }
+  ]
+}

@@ -44,9 +44,11 @@ That trade holds to roughly **50k chunks**. Past that the DynamoDB scan — not 
 
 ### A similarity floor guards generation (ADR-003)
 
-If the best retrieved chunk scores below `minSimilarity` (default 0.35), the system returns "not found" **without calling the language model at all**. Retrieval below the floor is noise, and answering from noise is how RAG systems hallucinate. It also means an off-topic question costs nothing to answer.
+If the best retrieved chunk scores below `minSimilarity`, the system returns "not found" **without calling the language model at all**. Retrieval below the floor is noise, and answering from noise is how RAG systems hallucinate. It also means an off-topic question costs nothing to answer.
 
-This is the one behaviour with a dedicated regression test guarding it, because a silent break would be invisible: you'd get fluent, confident, unfounded answers.
+The floor is **measured, not guessed**. The value started at 0.35, picked before any embeddings existed to look at. The golden-set harness measured the actual distribution and found 0.35 was wrong in the direction nobody checks for: it rejected 5 of 12 questions the corpus demonstrably answers, including ones whose correct passage ranked *first*. Answerable questions score 0.183–0.751; out-of-scope questions never exceed 0.080. The floor now sits at 0.12, in the gap, and [a test](tests/eval/test_golden_set.py) fails if it drifts out of it.
+
+That value is specific to the embedding model. Change `embeddingModelId` and it has to be re-measured — `python tests/eval/record.py` does that.
 
 ### The API key never reaches the browser (ADR-008)
 
@@ -110,7 +112,7 @@ Everything tunable lives in `cdk.json` context — no code changes, no rebuild.
 | `region` | `us-east-1` | Deployment region (broadest Bedrock availability) |
 | `embeddingModelId` | `amazon.titan-embed-text-v2:0` | Model used for both ingestion and queries |
 | `generationModelId` | `us.anthropic.claude-haiku-4-5-…` | Answer generation |
-| `minSimilarity` | `0.35` | The floor below which no answer is generated |
+| `minSimilarity` | `0.12` | The floor below which no answer is generated. Measured, not guessed — see ADR-003 |
 | `maxTokens` | `1024` | Generation output cap |
 | `maxUploadMb` | `25` | Upload ceiling, signed into the S3 policy |
 | `chunkTargetTokens` / `chunkOverlapTokens` | `500` / `50` | Chunking |
@@ -161,13 +163,22 @@ docs/                     PRD, architecture and ADRs, API spec, test strategy
 
 ```bash
 ruff check . && ruff format --check .
-pytest tests/unit tests/infra -q --cov=src/shared --cov-fail-under=80
+pytest tests/unit tests/infra tests/eval -q --cov=src/shared --cov-fail-under=80
 cdk synth --quiet
 ```
 
 CI runs exactly these three, with no AWS credentials, on every pull request. Coverage on `src/shared/` sits at ~99%.
 
-The test suite is split three ways: **unit** tests (moto for DynamoDB, hand-written stubs for Bedrock — never real AWS), **infra** tests that assert on synthesized CloudFormation, and **integration** tests that need a deployed stack and are excluded from the PR gate.
+The test suite is split four ways:
+
+| Layer | What it proves | AWS |
+|---|---|---|
+| `tests/unit/` | The logic is correct — moto for DynamoDB, hand-written stubs for Bedrock | none |
+| `tests/infra/` | The synthesized CloudFormation says what it should | none |
+| `tests/eval/` | Retrieval still finds the right passage, against **real recorded embeddings** | none |
+| `tests/integration/` | The deployed system actually works end to end | real, excluded from the PR gate |
+
+The eval layer exists because everything above it can stay green while answer quality quietly degrades. It replays embeddings produced once by the real Bedrock model and committed as a fixture, so the scores — and therefore the floor — mean something, while the gate stays offline and deterministic. It detects its own staleness: change the chunker, the corpus, or the model, and it fails with a pointer to `tests/eval/record.py` rather than silently scoring passages the system would never produce.
 
 Runtime dependencies are `boto3`, `numpy`, and `pypdf`. That is the whole list, and it is deliberate — see ADR-004.
 
