@@ -11,6 +11,11 @@ from infra.ingest_stack import IngestStack
 from infra.observability_stack import ObservabilityStack
 from infra.storage_stack import StorageStack
 
+#: Applied to every resource in every stack. `scripts/destroy.sh` sweeps for
+#: this tag to prove teardown was complete, and it is the handle Cost Explorer
+#: needs to attribute spend to this project.
+PROJECT_TAG = "serverless-rag"
+
 
 def resolve_env(app: cdk.App) -> cdk.Environment:
     """Build the deployment environment for every stack in this app.
@@ -72,6 +77,11 @@ def build_app(context: dict[str, object] | None = None) -> cdk.App:
     """
     app = cdk.App(context=context)
     env = resolve_env(app)
+
+    # Tag everything. This is what makes teardown verifiable: `scripts/destroy.sh`
+    # sweeps for anything still carrying the tag, and Cost Explorer can be
+    # filtered by it to prove the idle bill really is zero.
+    cdk.Tags.of(app).add("Project", PROJECT_TAG)
 
     embedding_model_id = _require_context(app, "embeddingModelId")
 

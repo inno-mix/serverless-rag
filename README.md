@@ -71,37 +71,50 @@ Access being "available" in the model list does not mean it is granted to your a
 
 ```bash
 git clone <this-repo> && cd serverless-rag
-python3.12 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-
-npm install -g aws-cdk        # if you don't have the CDK CLI
-cdk bootstrap                 # once per account/region
-cdk deploy --all --require-approval never
+make install
+make deploy
 ```
 
-Deployment takes about 10 minutes, most of it CloudFront. The output you want is:
+That's it. `make deploy` runs a preflight first — credentials, CDK bootstrap (doing it if needed), and an actual `InvokeModel` call against both Bedrock models — then deploys all five stacks and prints the URL:
 
 ```
-FrontendStack.SiteUrl = https://d1234abcd.cloudfront.net
+  Open  https://d1234abcd.cloudfront.net
 ```
 
-Open it, upload a PDF, and ask a question. There is nothing else to configure — no API key to paste, no environment file.
+Open it, upload a PDF, and ask a question. There is nothing else to configure — no API key to paste, no environment file, no CORS origin to fill in after the fact.
+
+Roughly 10 minutes, most of it CloudFront. To check without changing anything:
+
+```bash
+make preflight     # or: ./scripts/deploy.sh --check
+```
 
 ### 3. Verify (optional)
 
 ```bash
-pytest tests/integration -q   # full journey against the deployed stack
+make smoke
 ```
 
-It discovers everything from CloudFormation outputs: presigns, uploads a fixture PDF, waits for indexing, asks an answerable question, asks an unanswerable one, and deletes.
+The full journey against the live stack, discovering everything from CloudFormation outputs: presign, upload a fixture PDF, poll to `READY`, ask an answerable question, ask an unanswerable one, delete.
 
 ### 4. Tear down
 
 ```bash
-cdk destroy --all
+make destroy
 ```
 
-Buckets and the table are created with `RemovalPolicy.DESTROY` and `auto_delete_objects`, so this leaves nothing behind. **This is a demo project, not a system of record** — teardown really does delete your documents.
+It asks for the account number, deletes all five stacks, and then does the two things `cdk destroy` alone does not — neither of which reports an error when skipped:
+
+- **Force-deletes the Secrets Manager secret.** CloudFormation only *schedules* secret deletion, keeping it for a recovery window of up to 30 days — and billing for it the whole time.
+- **Deletes orphaned log groups.** The custom-resource Lambdas CDK generates for bucket auto-delete and asset deployment create their log groups at runtime, so no template owns them and nothing cleans them up.
+
+Then it asks the tagging API whether anything still carries `Project=serverless-rag` and reports what it finds. Every resource is tagged, so the sweep can see all of it, and [a test](tests/infra/test_teardown.py) fails the build if a resource is ever added that would survive teardown or escape the tag.
+
+```bash
+./scripts/destroy.sh --dry-run   # show what would go, change nothing
+```
+
+**This is a demo project, not a system of record** — teardown really does delete your documents. The one thing deliberately left alone is the `CDKToolkit` bootstrap stack, which is shared with every other CDK app in the account; the script tells you how to remove it if this was the only one.
 
 ## Configuration
 
@@ -140,8 +153,12 @@ A **$5 monthly AWS Budget** is deployed as part of the stack. Storage is the onl
 ## Repository layout
 
 ```
+Makefile                  install · check · deploy · smoke · destroy
 app.py                    CDK entry point; wires the five stacks
 cdk.json                  Model IDs, region, thresholds — all configuration
+scripts/
+  deploy.sh                 preflight (creds, bootstrap, Bedrock) then deploy
+  destroy.sh                destroy, sweep what CFN leaves, verify by tag
 infra/                    One stack per concern
   storage_stack.py          S3 bucket, DynamoDB table, DLQ
   ingest_stack.py           Ingest Lambda, EventBridge rule, shared layer
@@ -160,6 +177,12 @@ docs/                     PRD, architecture and ADRs, API spec, test strategy
 ```
 
 ## Development
+
+```bash
+make check      # lint, tests, and cdk synth — exactly what CI runs
+```
+
+which is:
 
 ```bash
 ruff check . && ruff format --check .

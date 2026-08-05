@@ -25,3 +25,6 @@ node_modules/
 .DS_Store
 .idea/
 .vscode/
+
+# Deploy artefacts (may contain account-specific URLs and ids)
+cdk-outputs.json

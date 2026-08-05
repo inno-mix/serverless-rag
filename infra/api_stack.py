@@ -142,6 +142,16 @@ class ApiStack(cdk.Stack):
                 throttling_rate_limit=THROTTLE_RATE_LIMIT,
                 throttling_burst_limit=THROTTLE_BURST_LIMIT,
             ),
+            # Declining the account-level CloudWatch role is what keeps
+            # `cdk destroy` complete. CDK would otherwise create an
+            # `AWS::ApiGateway::Account` and an IAM role, both of which it marks
+            # RETAIN — they are account-wide singletons, so deleting them could
+            # break an unrelated API. The result is a teardown that silently
+            # leaves resources behind. Nothing here needs them: API Gateway
+            # *metrics* (the 4xx/5xx the dashboard graphs) need no role, only
+            # execution and access *logging* would, and every log this project
+            # reads comes from the Lambdas.
+            cloud_watch_role=False,
             default_cors_preflight_options=apigateway.CorsOptions(
                 allow_origins=[allowed_origin],
                 allow_headers=["Content-Type", "x-api-key"],
