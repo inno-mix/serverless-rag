@@ -53,6 +53,21 @@ class StorageStack(cdk.Stack):
             # stack already references this one, which CloudFormation rejects as
             # a dependency cycle (ADR-006).
             event_bridge_enabled=True,
+            # The browser posts upload bytes straight to S3, so the bucket must
+            # answer that request's preflight. The origin is `*` because the
+            # CloudFront domain is not known here — FrontendStack creates it and
+            # already depends on this stack. That is safe: the control on an
+            # upload is the signed policy, which pins the key, the content type,
+            # and the size range. CORS decides which page may *attempt* the
+            # request, never whether S3 accepts it (ADR-002 amendment).
+            cors=[
+                s3.CorsRule(
+                    allowed_methods=[s3.HttpMethods.POST],
+                    allowed_origins=["*"],
+                    allowed_headers=["*"],
+                    max_age=3000,
+                )
+            ],
         )
 
         self.table = dynamodb.Table(

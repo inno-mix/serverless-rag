@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Serverless RAG — Document Q&amp;A</title>
+    <meta
+      name="description"
+      content="Ask questions about your own documents. Answers are grounded in the uploaded text and cite the passages they came from."
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📄</text></svg>"
+    />
+  </head>
+  <body>
+    <header class="masthead">
+      <h1>Document Q&amp;A</h1>
+      <p class="lede">
+        Upload a PDF, text, or Markdown file, then ask about it. Answers come only from
+        your documents, and every claim shows the passage it came from.
+      </p>
+    </header>
+
+    <main>
+      <section class="panel" aria-labelledby="upload-heading">
+        <h2 id="upload-heading">Documents</h2>
+
+        <div class="uploader">
+          <label class="button" for="file-input">
+            Choose a file
+            <input
+              id="file-input"
+              type="file"
+              accept=".pdf,.txt,.md"
+              hidden
+            />
+          </label>
+          <span class="hint">PDF, TXT, or MD &middot; up to 25 MB</span>
+        </div>
+
+        <p id="upload-status" class="status" role="status" aria-live="polite"></p>
+
+        <table class="documents" id="documents-table">
+          <caption class="visually-hidden">Uploaded documents and their indexing status</caption>
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Status</th>
+              <th scope="col" class="numeric">Chunks</th>
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="documents-body">
+            <tr class="empty">
+              <td colspan="4">Loading…</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="panel" aria-labelledby="ask-heading">
+        <h2 id="ask-heading">Ask a question</h2>
+
+        <form id="ask-form" class="ask">
+          <label class="visually-hidden" for="question">Your question</label>
+          <input
+            id="question"
+            name="question"
+            type="text"
+            placeholder="What was the third quarter revenue?"
+            autocomplete="off"
+            minlength="3"
+            maxlength="2000"
+            required
+          />
+          <button type="submit" class="button primary" id="ask-button">Ask</button>
+        </form>
+
+        <p id="ask-status" class="status" role="status" aria-live="polite"></p>
+
+        <article id="answer" class="answer" hidden>
+          <p id="answer-text" class="answer-text"></p>
+          <p id="answer-meta" class="meta"></p>
+          <div id="citations" class="citations"></div>
+        </article>
+      </section>
+    </main>
+
+    <footer class="colophon">
+      <p>
+        Retrieval is exact cosine similarity over vectors in DynamoDB — no vector
+        database, no idle cost. Below a similarity floor the system answers
+        &ldquo;not found&rdquo; without calling the language model at all.
+      </p>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>

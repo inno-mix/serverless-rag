@@ -16,6 +16,7 @@ from aws_cdk import aws_dynamodb as dynamodb
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_logs as logs
 from aws_cdk import aws_s3 as s3
+from aws_cdk import aws_secretsmanager as secretsmanager
 from constructs import Construct
 
 from infra.bedrock_policy import invoke_model_policy
@@ -161,7 +162,33 @@ class ApiStack(cdk.Stack):
             "POST", apigateway.LambdaIntegration(self.query_function)
         )
 
-        self.api_key = self.api.add_api_key("RagApiKey", description="Demo client key")
+        # The key value is generated at deploy time and kept in Secrets Manager,
+        # so it exists in neither the repository nor the browser. FrontendStack
+        # reads the same reference to inject it as a CloudFront origin header,
+        # which is what keeps the deployed demo self-serve without publishing a
+        # credential (ADR-008).
+        self.api_key_secret = secretsmanager.Secret(
+            self,
+            "ApiKeySecret",
+            description="x-api-key value for the serverless-rag API",
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+            generate_secret_string=secretsmanager.SecretStringGenerator(
+                # API Gateway keys must be at least 20 characters and accept no
+                # whitespace; punctuation is excluded to keep the value safe in
+                # a header without quoting.
+                password_length=40,
+                exclude_punctuation=True,
+                exclude_characters=" ",
+            ),
+        )
+        self.api_key_value = self.api_key_secret.secret_value.unsafe_unwrap()
+
+        self.api_key = apigateway.ApiKey(
+            self,
+            "RagApiKey",
+            description="Demo client key",
+            value=self.api_key_value,
+        )
         self.usage_plan = self.api.add_usage_plan(
             "RagUsagePlan",
             throttle=apigateway.ThrottleSettings(
@@ -175,6 +202,7 @@ class ApiStack(cdk.Stack):
 
         cdk.CfnOutput(self, "ApiUrl", value=self.api.url)
         cdk.CfnOutput(self, "ApiKeyId", value=self.api_key.key_id)
+        cdk.CfnOutput(self, "ApiKeySecretArn", value=self.api_key_secret.secret_arn)
 
     def _function(
         self,
