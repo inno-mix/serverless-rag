@@ -6,6 +6,10 @@ Built entirely on AWS with CDK v2 (Python). Retrieval-augmented generation imple
 
 **Idle cost: ~$0/month.** Nothing runs until a request arrives.
 
+![The app: document list, an answer, and the passage it was drawn from](screenshots/desktop.png)
+
+<sub>More in [`screenshots/`](screenshots/) — [mobile](screenshots/mobile.png), [dark mode](screenshots/dark-mode.png), and [an out-of-scope question refused without a model call](screenshots/similarity-floor.png).</sub>
+
 ---
 
 ## What it does
@@ -182,8 +186,9 @@ src/
   documents/handler.py    Presign, list, delete
   shared/                 Lambda layer: the logic worth unit-testing
 frontend/                 Vanilla JS, no build step
-tests/                    unit · infra (CDK assertions) · integration
+tests/                    unit · infra (CDK assertions) · eval · integration
 docs/                     PRD, architecture and ADRs, API spec, test strategy
+screenshots/              Demo captures, with a note on how they were made
 ```
 
 ## Development
