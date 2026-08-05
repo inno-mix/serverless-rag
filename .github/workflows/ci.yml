@@ -20,19 +20,35 @@
 #                         policy must federate token.actions.githubusercontent.com
 #                         and restrict `sub` to this repository, e.g.
 #                           "repo:<owner>/<repo>:ref:refs/heads/main"
-#                         The role needs permissions to deploy this stack set
-#                         (CloudFormation, S3, DynamoDB, Lambda, API Gateway,
-#                         CloudFront, SQS, IAM, CloudWatch, Budgets) plus
-#                         sts:AssumeRole on the CDK bootstrap roles.
+#
+#                         Permissions: this role does NOT need permission to
+#                         create the individual resources. A bootstrapped CDK
+#                         app deploys by assuming the bootstrap roles, and
+#                         CloudFormation then creates resources using the
+#                         bootstrap execution role. So the role needs:
+#
+#                           sts:AssumeRole on arn:aws:iam::<account>:role/cdk-*
+#
+#                         plus, for the post-deploy smoke test, read access to
+#                         discover the deployed API:
+#
+#                           cloudformation:DescribeStacks
+#                           apigateway:GET          (reads the API key value)
 #
 #   AWS_REGION            Deployment region. Must match the `region` key in
 #                         cdk.json (us-east-1).
+#
+# Optional:
+#   ALERT_EMAIL           Subscribed to the CloudWatch alarms and the $5 budget.
+#                         Left unset, both are still created but notify nobody.
+#                         A repository variable rather than cdk.json, so no
+#                         personal address is committed.
 #
 # Also required in the AWS account, one time:
 #   * An IAM OIDC identity provider for https://token.actions.githubusercontent.com
 #   * `cdk bootstrap aws://<account>/us-east-1`
 #
-# No secrets are required — only the two variables above.
+# No secrets are required — only variables.
 # ---------------------------------------------------------------------------
 
 name: CI
@@ -99,6 +115,14 @@ jobs:
       github.ref == 'refs/heads/main' &&
       vars.AWS_DEPLOY_ROLE_ARN != ''
     runs-on: ubuntu-latest
+    # One deploy at a time. Two pushes landing together would otherwise race on
+    # the same CloudFormation stacks, and the loser fails midway leaving them in
+    # UPDATE_IN_PROGRESS. Scoped to this job so PR checks are unaffected, and
+    # queued rather than cancelled so a superseded deploy still finishes cleanly
+    # instead of being killed part-way through a stack update.
+    concurrency:
+      group: deploy-${{ github.ref }}
+      cancel-in-progress: false
     permissions:
       id-token: write # required for GitHub OIDC
       contents: read
@@ -126,5 +150,18 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
+      # `alertEmail` is passed as context rather than committed to cdk.json, so
+      # no personal address enters git history. Empty is valid and means the
+      # alarms and budget deploy without a notification target.
       - name: CDK deploy
-        run: cdk deploy --all --require-approval never
+        run: |
+          cdk deploy --all --require-approval never \
+            --context alertEmail="${{ vars.ALERT_EMAIL }}"
+
+      # TESTING.md §6: integration tests are excluded from the PR gate because
+      # they need a deployed stack, and run in the post-deploy job instead.
+      # This is the only check that exercises the deployed system end to end —
+      # presigned upload, indexing, retrieval, the similarity floor, deletion —
+      # so a deploy that succeeds while the application is broken fails here.
+      - name: Smoke test the deployment
+        run: pytest tests/integration -q
