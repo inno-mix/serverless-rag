@@ -33,7 +33,7 @@ from shared.storage import (
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 EVENTS = FIXTURES / "events"
 BUCKET = "documents-bucket"
-DLQ_URL = "https://sqs.us-east-1.amazonaws.com/146259920030/ingest-dlq"
+DLQ_URL = "https://sqs.us-east-1.amazonaws.com/123456789012/ingest-dlq"
 
 
 @pytest.fixture(autouse=True)

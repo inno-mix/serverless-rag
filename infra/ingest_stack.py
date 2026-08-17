@@ -30,7 +30,7 @@ UPLOAD_PREFIX = "uploads/"
 
 #: Runtime dependencies shipped in the shared layer. `boto3` is provided by the
 #: Lambda runtime and is deliberately absent (CLAUDE.md dependency rule).
-LAYER_DEPENDENCIES = ("numpy>=2.1.0,<3", "pypdf>=5.1.0,<6")
+LAYER_DEPENDENCIES = ("numpy>=2.1.0,<3", "pypdf>=6.15.0,<7")
 
 #: Lambdas run on x86_64, so wheels must be resolved for that platform even when
 #: the layer is built on an arm64 developer machine.

@@ -104,6 +104,15 @@ jobs:
       - name: CDK synth
         run: cdk synth --quiet
 
+      # Runs last so a CVE disclosed upstream cannot mask a real test failure,
+      # but it does fail the build. The ingest Lambda parses PDFs uploaded by
+      # anyone who can reach the demo, so a parser advisory is reachable by an
+      # attacker rather than theoretical.
+      - name: Audit dependencies for known vulnerabilities
+        run: |
+          pip install --quiet pip-audit
+          pip-audit --progress-spinner off
+
   deploy:
     name: Deploy to AWS
     needs: test

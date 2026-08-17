@@ -1,0 +1,29 @@
+# Dependency updates.
+#
+# `pypdf` is the reason this file exists. It parses PDFs uploaded by anyone who
+# can reach the demo, so a parser CVE is directly reachable by an attacker —
+# and the two that were open when this repo was reviewed (CVE-2026-71870,
+# CVE-2026-71852) were both denial of service during text extraction, which is
+# exactly the call the ingest Lambda makes.
+#
+# GitHub Actions are included because a compromised action release would run
+# with whatever permissions the workflow grants, and this repo's deploy job
+# holds an OIDC role.
+
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # One PR for routine tooling; security updates still arrive separately
+      # and immediately, which is the point.
+      dev-tooling:
+        patterns: ["pytest*", "ruff", "moto*", "pip-audit"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
